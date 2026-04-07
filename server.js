@@ -54,6 +54,11 @@ app.get('/health', (req, res) => {
   res.json({ success: true, status: 'ok', db: 'connected', timestamp: new Date() });
 });
 
+// ✅ ADD THIS HERE 👇
+app.get("/", (req, res) => {
+  res.send("SIDDHI Backend is running 🚀");
+});
+
 // ── Routes ────────────────────────────────────────────────
 app.use('/api/auth',          require('./routes/auth'));
 app.use('/api/restaurant',    require('./routes/restaurant'));
