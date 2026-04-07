@@ -1,0 +1,66 @@
+# ============================================
+# SIDDHI Backend - .gitignore
+# Optimized for Render deployment
+# ============================================
+
+# ------ Environment & Secrets ------
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+*.env
+
+# ------ Node.js ------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ------ Logs ------
+logs/
+*.log
+*.log.*
+
+# ------ Runtime & OS ------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ------ Build / Coverage ------
+dist/
+build/
+coverage/
+.nyc_output/
+.cache/
+
+# ------ Uploads / Temp Files ------
+uploads/
+tmp/
+temp/
+
+# ------ Testing & Dev Scripts ------
+# These are local-only scripts and test files
+siddhi_test_all.sh
+siddhi_test_all_v2.sh
+siddhi_supabase_test.js
+test_payment.js
+seed.js
+
+# ------ API Collections & Docs (optional) ------
+# Uncomment if you don't want these in git:
+API.json
+SIDDHI_Folder11_Postman.json
+SIDDHI_Restaurant_API_Collection.json
+SIDDHI_Backend_Prompts.md
+
+# ------ package-lock (keep if using npm ci on Render) ------
+# Do NOT ignore package-lock.json — Render uses it for reproducible installs
