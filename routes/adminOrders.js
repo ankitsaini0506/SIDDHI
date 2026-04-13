@@ -27,33 +27,20 @@ async function fetchOrderWithItems(supabase, id) {
     .select('*')
     .eq('order_id', id);
 
-  // Resolve table info — orders.table_id is integer (table_number value)
+  // Resolve table info — orders.table_id stores the integer table_number
+  const tableIdInt = order.table_id ? parseInt(order.table_id) : null;
   let tableInfo = null;
-  const rawTableId = order.table_id ?? order.table_number ?? null;
+  let resolvedTableNumber = tableIdInt;
 
-  if (rawTableId) {
-    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(rawTableId));
-
-    let tableRow = null;
-    if (isUUID) {
-      // Stored as UUID — query by tables.id
-      const { data } = await supabase
-        .from('tables')
-        .select('id, table_number, location, capacity')
-        .eq('id', rawTableId)
-        .maybeSingle();
-      tableRow = data;
-    } else {
-      // Stored as integer — query by tables.table_number
-      const { data } = await supabase
-        .from('tables')
-        .select('id, table_number, location, capacity')
-        .eq('table_number', rawTableId)
-        .maybeSingle();
-      tableRow = data;
-    }
+  if (tableIdInt) {
+    const { data: tableRow, error: tableErr } = await supabase
+      .from('tables')
+      .select('id, table_number, location, capacity')
+      .eq('table_number', tableIdInt)
+      .maybeSingle();
 
     if (tableRow) {
+      resolvedTableNumber = tableRow.table_number;
       tableInfo = {
         table_uuid:   tableRow.id,
         table_number: tableRow.table_number,
@@ -61,19 +48,17 @@ async function fetchOrderWithItems(supabase, id) {
         capacity:     tableRow.capacity,
       };
     } else {
-      // Table row not found — still expose raw value so frontend isn't left with null
       tableInfo = {
         table_uuid:   null,
-        table_number: isUUID ? null : Number(rawTableId),
+        table_number: tableIdInt,
         location:     null,
         capacity:     null,
       };
+      if (tableErr) console.error('[admin/orders/:id] table join error:', tableErr.message);
     }
   }
 
-  const resolvedTableNumber = tableInfo?.table_number ?? (rawTableId && !isNaN(rawTableId) ? Number(rawTableId) : null);
-
-  const displayOrderType = (order.order_type === 'pickup' && rawTableId)
+  const displayOrderType = (order.order_type === 'pickup' && tableIdInt)
     ? 'dine_in'
     : order.order_type;
 
@@ -190,34 +175,39 @@ router.get('/', verifyToken, async (req, res) => {
           .select('*')
           .eq('order_id', order.id);
 
-        // Resolve table info — handle both UUID and integer stored in table_id
-        const rawTableId = order.table_id ?? order.table_number ?? null;
+        // Resolve table info — orders.table_id stores the integer table_number
+        const tableIdInt = order.table_id ? parseInt(order.table_id) : null;
         let tableInfo = null;
-        let resolvedTableNumber = null;
+        let resolvedTableNumber = tableIdInt; // fallback: use raw value even if join fails
 
-        if (rawTableId) {
-          const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(rawTableId));
-          const { data: tableRow } = await supabase
+        if (tableIdInt) {
+          const { data: tableRow, error: tableErr } = await supabase
             .from('tables')
             .select('id, table_number, location, capacity')
-            .eq(isUUID ? 'id' : 'table_number', rawTableId)
+            .eq('table_number', tableIdInt)
             .maybeSingle();
 
           if (tableRow) {
+            resolvedTableNumber = tableRow.table_number;
             tableInfo = {
               table_uuid:   tableRow.id,
               table_number: tableRow.table_number,
               location:     tableRow.location,
               capacity:     tableRow.capacity,
             };
-            resolvedTableNumber = tableRow.table_number;
           } else {
-            resolvedTableNumber = !isUUID && !isNaN(rawTableId) ? Number(rawTableId) : null;
-            tableInfo = { table_uuid: null, table_number: resolvedTableNumber, location: null, capacity: null };
+            // Join failed but we still know the table number from orders.table_id
+            tableInfo = {
+              table_uuid:   null,
+              table_number: tableIdInt,
+              location:     null,
+              capacity:     null,
+            };
+            if (tableErr) console.error('[admin/orders] table join error:', tableErr.message);
           }
         }
 
-        const displayOrderType = (order.order_type === 'pickup' && rawTableId)
+        const displayOrderType = (order.order_type === 'pickup' && tableIdInt)
           ? 'dine_in'
           : order.order_type;
 
