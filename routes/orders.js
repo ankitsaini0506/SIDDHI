@@ -78,8 +78,8 @@ router.post('/request', async (req, res) => {
 
     if (!customer_name || !customer_phone)
       return res.status(400).json({ success: false, message: 'customer_name and customer_phone are required' });
-    if (!order_type || !['pickup', 'delivery'].includes(order_type))
-      return res.status(400).json({ success: false, message: 'order_type must be pickup or delivery' });
+    if (!order_type || !['pickup', 'delivery', 'dine_in'].includes(order_type))
+      return res.status(400).json({ success: false, message: 'order_type must be pickup, delivery, or dine_in' });
 
     const isCod = payment_method === 'cod';
 
