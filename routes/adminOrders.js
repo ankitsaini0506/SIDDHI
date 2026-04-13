@@ -432,8 +432,8 @@ router.patch('/:id/accept', verifyToken, async (req, res) => {
       status:   waSid ? 'sent' : 'failed',
     });
 
-    wsEvents.orderUpdated({ order_id: id, status: 'confirmed', whatsapp_sent: !!waSid });
-    res.json({ success: true, message: 'Order accepted', data: { ...updated, whatsapp_sent: !!waSid } });
+    wsEvents.orderUpdated({ order_id: id, status: 'confirmed', table_number: order.table_number ?? null, whatsapp_sent: !!waSid });
+    res.json({ success: true, message: 'Order accepted', data: { ...updated, table_number: order.table_number ?? null, table_info: order.table_info ?? null, whatsapp_sent: !!waSid } });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
   }
@@ -496,8 +496,8 @@ router.patch('/:id/reject', verifyToken, async (req, res) => {
       status:   waSid ? 'sent' : 'failed',
     });
 
-    wsEvents.orderUpdated({ order_id: id, status: 'rejected', whatsapp_sent: !!waSid });
-    res.json({ success: true, message: 'Order rejected', data: { ...updated, whatsapp_sent: !!waSid } });
+    wsEvents.orderUpdated({ order_id: id, status: 'rejected', table_number: order.table_number ?? null, whatsapp_sent: !!waSid });
+    res.json({ success: true, message: 'Order rejected', data: { ...updated, table_number: order.table_number ?? null, table_info: order.table_info ?? null, whatsapp_sent: !!waSid } });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
   }
@@ -508,13 +508,14 @@ router.patch('/:id/in-kitchen', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const supabase = getSupabase();
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('orders')
       .update({ status: 'in_kitchen', updated_at: new Date().toISOString() })
-      .eq('id', id).select('id, status').single();
+      .eq('id', id);
     if (error) return res.status(400).json({ success: false, message: 'Update failed', error: error.message });
-    wsEvents.orderUpdated({ order_id: id, status: 'in_kitchen' });
-    res.json({ success: true, message: 'Order moved to kitchen', data });
+    const { order } = await fetchOrderWithItems(supabase, id);
+    wsEvents.orderUpdated({ order_id: id, status: 'in_kitchen', table_number: order?.table_number ?? null });
+    res.json({ success: true, message: 'Order moved to kitchen', data: order });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
   }
@@ -525,13 +526,14 @@ router.patch('/:id/ready', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const supabase = getSupabase();
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('orders')
       .update({ status: 'ready', updated_at: new Date().toISOString() })
-      .eq('id', id).select('id, status').single();
+      .eq('id', id);
     if (error) return res.status(400).json({ success: false, message: 'Update failed', error: error.message });
-    wsEvents.orderUpdated({ order_id: id, status: 'ready' });
-    res.json({ success: true, message: 'Order is ready', data });
+    const { order } = await fetchOrderWithItems(supabase, id);
+    wsEvents.orderUpdated({ order_id: id, status: 'ready', table_number: order?.table_number ?? null });
+    res.json({ success: true, message: 'Order is ready', data: order });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
   }
@@ -542,13 +544,14 @@ router.patch('/:id/out-for-delivery', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const supabase = getSupabase();
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('orders')
       .update({ status: 'out_for_delivery', updated_at: new Date().toISOString() })
-      .eq('id', id).select('id, status').single();
+      .eq('id', id);
     if (error) return res.status(400).json({ success: false, message: 'Update failed', error: error.message });
-    wsEvents.orderUpdated({ order_id: id, status: 'out_for_delivery' });
-    res.json({ success: true, message: 'Order out for delivery', data });
+    const { order } = await fetchOrderWithItems(supabase, id);
+    wsEvents.orderUpdated({ order_id: id, status: 'out_for_delivery', table_number: order?.table_number ?? null });
+    res.json({ success: true, message: 'Order out for delivery', data: order });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
   }
