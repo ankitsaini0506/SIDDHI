@@ -1,8 +1,8 @@
 require('dotenv').config();
 const express = require('express');
-const cors    = require('cors');
-const helmet  = require('helmet');
-const morgan  = require('morgan');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
 const { createClient } = require('@supabase/supabase-js');
 
 // ── Env var check ─────────────────────────────────────────
@@ -17,12 +17,22 @@ required.forEach(key => {
 const app = express();
 
 // ── Middleware ────────────────────────────────────────────
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'https://siddhi-website.vercel.app',
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
 app.use(cors({
-  origin: [
-    process.env.FRONTEND_URL || '*',
-    'http://localhost:3000',
-    'http://localhost:5173',
-  ],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
   credentials: true,
 }));
 app.use(helmet());
@@ -60,17 +70,17 @@ app.get("/", (req, res) => {
 });
 
 // ── Routes ────────────────────────────────────────────────
-app.use('/api/auth',          require('./routes/auth'));
-app.use('/api/restaurant',    require('./routes/restaurant'));
-app.use('/api/categories',    require('./routes/categories'));
-app.use('/api/menu',          require('./routes/menu'));
-app.use('/api/tables',        require('./routes/tables'));
-app.use('/api/orders',        require('./routes/orders'));
-app.use('/api/admin/orders',  require('./routes/adminOrders'));
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/restaurant', require('./routes/restaurant'));
+app.use('/api/categories', require('./routes/categories'));
+app.use('/api/menu', require('./routes/menu'));
+app.use('/api/tables', require('./routes/tables'));
+app.use('/api/orders', require('./routes/orders'));
+app.use('/api/admin/orders', require('./routes/adminOrders'));
 app.use('/api/notifications', require('./routes/notifications'));
-app.use('/api/coupons',       require('./routes/coupons'));
-app.use('/api/payments',      require('./routes/payments'));
-app.use('/api/admin',         require('./routes/dashboard'));
+app.use('/api/coupons', require('./routes/coupons'));
+app.use('/api/payments', require('./routes/payments'));
+app.use('/api/admin', require('./routes/dashboard'));
 
 // ── 404 handler ───────────────────────────────────────────
 app.use((req, res) => {
@@ -86,8 +96,15 @@ app.use((err, req, res, next) => {
 // ── Start cron jobs ───────────────────────────────────────
 require('./utils/cron');
 
-// ── Start server ──────────────────────────────────────────
+// ── Start server with WebSocket support ───────────────────
+const { createServer } = require('http');
+const { initWebSocket } = require('./utils/websocket');
+
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+const httpServer = createServer(app);
+initWebSocket(httpServer);
+
+httpServer.listen(PORT, () => {
   console.log(`🚀 SIDDHI server running on port ${PORT}`);
+  console.log(`🔌 WebSocket ready on ws://localhost:${PORT}`);
 });
