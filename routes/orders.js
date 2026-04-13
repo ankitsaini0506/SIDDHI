@@ -64,20 +64,24 @@ router.post('/apply-coupon', async (req, res) => {
 });
 
 // ── POST /api/orders/request  (PUBLIC) ────────────────────────
-// Customer places cart request. NO payment at this step.
-// status = 'requested', approved_quantity = NULL for all items
+// Customer places cart request.
+// payment_method = 'cod'    → status = 'confirmed', payment_status = 'cod_pending'
+// payment_method = 'online' → status = 'requested', payment_status = 'pending'
 router.post('/request', async (req, res) => {
   try {
     const {
       order_type, table_id, customer_name, customer_phone,
       delivery_address, latitude, longitude,
       items, coupon_code, special_instructions,
+      payment_method,
     } = req.body;
 
     if (!customer_name || !customer_phone)
       return res.status(400).json({ success: false, message: 'customer_name and customer_phone are required' });
     if (!order_type || !['pickup', 'delivery'].includes(order_type))
       return res.status(400).json({ success: false, message: 'order_type must be pickup or delivery' });
+
+    const isCod = payment_method === 'cod';
 
     const supabase = getSupabase();
 
@@ -148,7 +152,25 @@ router.post('/request', async (req, res) => {
 
     const total_amount = subtotal - discount_amount;
 
-    // Insert order with status = 'requested'
+    // COD: confirmed immediately. Online: goes through admin approval flow.
+    const initialStatus        = isCod ? 'confirmed'    : 'requested';
+    const initialPaymentStatus = isCod ? 'cod_pending'  : 'pending';
+
+    // COD: increment coupon used_count now (no payment step later)
+    if (isCod && appliedCoupon) {
+      const { data: coupon } = await supabase
+        .from('coupons')
+        .select('id, used_count')
+        .eq('code', appliedCoupon)
+        .maybeSingle();
+      if (coupon) {
+        await supabase
+          .from('coupons')
+          .update({ used_count: coupon.used_count + 1 })
+          .eq('id', coupon.id);
+      }
+    }
+
     const { data: order, error: orderErr } = await supabase
       .from('orders')
       .insert({
@@ -164,9 +186,9 @@ router.post('/request', async (req, res) => {
         total_amount,
         coupon_code:          appliedCoupon        || null,
         special_instructions: special_instructions || null,
-        status:               'requested',
-        payment_method:       'online',
-        payment_status:       'pending',
+        status:               initialStatus,
+        payment_method:       isCod ? 'cod' : 'online',
+        payment_status:       initialPaymentStatus,
       })
       .select('id, order_number, order_type, status, payment_status, subtotal, discount_amount, total_amount')
       .single();
@@ -174,16 +196,17 @@ router.post('/request', async (req, res) => {
     if (orderErr)
       return res.status(400).json({ success: false, message: 'Order creation failed', error: orderErr.message });
 
-    // Insert order_items with requested_quantity set, approved_quantity = NULL
+    // COD: auto-approve all items at original price (no admin approval needed)
+    // Online: approved_quantity = NULL, admin will review
     const orderItemsPayload = resolvedItems.map(i => ({
       order_id:           order.id,
       menu_item_id:       i.menu_item_id,
       item_name:          i.item_name,
       item_price:         i.item_price,
       quantity:           i.quantity,
-      requested_quantity: i.quantity,   // copy — never changes
-      approved_quantity:  null,         // admin will set
-      final_price:        null,         // admin will set
+      requested_quantity: i.quantity,
+      approved_quantity:  isCod ? i.quantity : null,
+      final_price:        isCod ? i.item_price : null,
       variant:            i.variant,
       special_note:       i.special_note,
     }));
@@ -194,13 +217,16 @@ router.post('/request', async (req, res) => {
     const responseData = {
       id:             order.id,
       order_number:   order.order_number,
-      status:         'requested',
-      payment_status: 'pending',
+      status:         initialStatus,
+      payment_status: initialPaymentStatus,
+      payment_method: isCod ? 'cod' : 'online',
       subtotal,
       discount_amount,
       total_amount,
       items_count:    resolvedItems.length,
-      note:           'Restaurant will confirm available items shortly (within 10 minutes)',
+      note:           isCod
+        ? 'COD order confirmed! Pay at delivery.'
+        : 'Restaurant will confirm available items shortly (within 10 minutes)',
     };
 
     // Broadcast new order to admin dashboard in real-time
