@@ -27,14 +27,32 @@ async function fetchOrderWithItems(supabase, id) {
     .select('*')
     .eq('order_id', id);
 
-  // Resolve table info
+  // Resolve table info — orders.table_id is integer (table_number value)
   let tableInfo = null;
-  if (order.table_id) {
-    const { data: tableRow } = await supabase
-      .from('tables')
-      .select('id, table_number, location, capacity')
-      .eq('table_number', order.table_id)
-      .maybeSingle();
+  const rawTableId = order.table_id ?? order.table_number ?? null;
+
+  if (rawTableId) {
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(rawTableId));
+
+    let tableRow = null;
+    if (isUUID) {
+      // Stored as UUID — query by tables.id
+      const { data } = await supabase
+        .from('tables')
+        .select('id, table_number, location, capacity')
+        .eq('id', rawTableId)
+        .maybeSingle();
+      tableRow = data;
+    } else {
+      // Stored as integer — query by tables.table_number
+      const { data } = await supabase
+        .from('tables')
+        .select('id, table_number, location, capacity')
+        .eq('table_number', rawTableId)
+        .maybeSingle();
+      tableRow = data;
+    }
+
     if (tableRow) {
       tableInfo = {
         table_uuid:   tableRow.id,
@@ -42,10 +60,20 @@ async function fetchOrderWithItems(supabase, id) {
         location:     tableRow.location,
         capacity:     tableRow.capacity,
       };
+    } else {
+      // Table row not found — still expose raw value so frontend isn't left with null
+      tableInfo = {
+        table_uuid:   null,
+        table_number: isUUID ? null : Number(rawTableId),
+        location:     null,
+        capacity:     null,
+      };
     }
   }
 
-  const displayOrderType = (order.order_type === 'pickup' && order.table_id)
+  const resolvedTableNumber = tableInfo?.table_number ?? (rawTableId && !isNaN(rawTableId) ? Number(rawTableId) : null);
+
+  const displayOrderType = (order.order_type === 'pickup' && rawTableId)
     ? 'dine_in'
     : order.order_type;
 
@@ -53,7 +81,7 @@ async function fetchOrderWithItems(supabase, id) {
     order: {
       ...order,
       order_type:   displayOrderType,
-      table_number: order.table_id,
+      table_number: resolvedTableNumber,
       table_info:   tableInfo,
       items:        items || [],
     },
@@ -162,35 +190,42 @@ router.get('/', verifyToken, async (req, res) => {
           .select('*')
           .eq('order_id', order.id);
 
-        // Resolve table info if table_id present
+        // Resolve table info — handle both UUID and integer stored in table_id
+        const rawTableId = order.table_id ?? order.table_number ?? null;
         let tableInfo = null;
-        if (order.table_id) {
+        let resolvedTableNumber = null;
+
+        if (rawTableId) {
+          const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(rawTableId));
           const { data: tableRow } = await supabase
             .from('tables')
             .select('id, table_number, location, capacity')
-            .eq('table_number', order.table_id)
+            .eq(isUUID ? 'id' : 'table_number', rawTableId)
             .maybeSingle();
+
           if (tableRow) {
             tableInfo = {
-              table_uuid:     tableRow.id,
-              table_number:   tableRow.table_number,
-              location:       tableRow.location,
-              capacity:       tableRow.capacity,
+              table_uuid:   tableRow.id,
+              table_number: tableRow.table_number,
+              location:     tableRow.location,
+              capacity:     tableRow.capacity,
             };
+            resolvedTableNumber = tableRow.table_number;
+          } else {
+            resolvedTableNumber = !isUUID && !isNaN(rawTableId) ? Number(rawTableId) : null;
+            tableInfo = { table_uuid: null, table_number: resolvedTableNumber, location: null, capacity: null };
           }
         }
 
-        // If table_id is set and order_type is 'pickup', it was a dine_in order
-        // (we store dine_in as pickup in DB due to constraint — restore the real label here)
-        const displayOrderType = (order.order_type === 'pickup' && order.table_id)
+        const displayOrderType = (order.order_type === 'pickup' && rawTableId)
           ? 'dine_in'
           : order.order_type;
 
         return {
           ...order,
-          order_type:   displayOrderType,  // 'dine_in' restored for frontend
-          table_number: order.table_id,    // integer alias
-          table_info:   tableInfo,         // full table details (null if no table)
+          order_type:   displayOrderType,
+          table_number: resolvedTableNumber,
+          table_info:   tableInfo,
           items:        items || [],
         };
       })
