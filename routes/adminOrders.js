@@ -5,6 +5,8 @@ const verifyToken = require('../middleware/auth');
 const { sendOrderAccepted, sendOrderRejected } = require('../utils/whatsapp');
 const { initiateRefund } = require('../utils/razorpay');
 
+const { events: wsEvents } = require('../utils/websocket');
+
 const router = express.Router();
 
 function getSupabase() {
@@ -286,24 +288,23 @@ router.patch('/:id/approve-items', verifyToken, async (req, res) => {
       admin_note:         i.admin_note,
     }));
 
-    res.json({
-      success: true,
-      message: 'Items approved. Customer can now pay.',
-      data: {
-        order_id:       id,
-        order_number:   order.order_number,
-        status:         'payment_pending',
-        approved_count: approvedItems.length,
-        removed_count:  removedItems.length,
-        approved_items: approvedItems,
-        removed_items:  removedItems,
-        new_subtotal:   newSubtotal,
-        new_discount:   newDiscount,
-        new_total:      newTotal,
-        can_edit_again: true,
-        note:           'Customer will see updated order and can now pay',
-      },
-    });
+    const approveResponse = {
+      order_id:       id,
+      order_number:   order.order_number,
+      status:         'payment_pending',
+      approved_count: approvedItems.length,
+      removed_count:  removedItems.length,
+      approved_items: approvedItems,
+      removed_items:  removedItems,
+      new_subtotal:   newSubtotal,
+      new_discount:   newDiscount,
+      new_total:      newTotal,
+      can_edit_again: true,
+      note:           'Customer will see updated order and can now pay',
+    };
+    wsEvents.orderApproved(approveResponse);
+
+    res.json({ success: true, message: 'Items approved. Customer can now pay.', data: approveResponse });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
   }
@@ -344,6 +345,7 @@ router.patch('/:id/accept', verifyToken, async (req, res) => {
       status:   waSid ? 'sent' : 'failed',
     });
 
+    wsEvents.orderUpdated({ order_id: id, status: 'confirmed', whatsapp_sent: !!waSid });
     res.json({ success: true, message: 'Order accepted', data: { ...updated, whatsapp_sent: !!waSid } });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
@@ -407,6 +409,7 @@ router.patch('/:id/reject', verifyToken, async (req, res) => {
       status:   waSid ? 'sent' : 'failed',
     });
 
+    wsEvents.orderUpdated({ order_id: id, status: 'rejected', whatsapp_sent: !!waSid });
     res.json({ success: true, message: 'Order rejected', data: { ...updated, whatsapp_sent: !!waSid } });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
@@ -423,6 +426,7 @@ router.patch('/:id/in-kitchen', verifyToken, async (req, res) => {
       .update({ status: 'in_kitchen', updated_at: new Date().toISOString() })
       .eq('id', id).select('id, status').single();
     if (error) return res.status(400).json({ success: false, message: 'Update failed', error: error.message });
+    wsEvents.orderUpdated({ order_id: id, status: 'in_kitchen' });
     res.json({ success: true, message: 'Order moved to kitchen', data });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
@@ -439,6 +443,7 @@ router.patch('/:id/ready', verifyToken, async (req, res) => {
       .update({ status: 'ready', updated_at: new Date().toISOString() })
       .eq('id', id).select('id, status').single();
     if (error) return res.status(400).json({ success: false, message: 'Update failed', error: error.message });
+    wsEvents.orderUpdated({ order_id: id, status: 'ready' });
     res.json({ success: true, message: 'Order is ready', data });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
@@ -455,6 +460,7 @@ router.patch('/:id/out-for-delivery', verifyToken, async (req, res) => {
       .update({ status: 'out_for_delivery', updated_at: new Date().toISOString() })
       .eq('id', id).select('id, status').single();
     if (error) return res.status(400).json({ success: false, message: 'Update failed', error: error.message });
+    wsEvents.orderUpdated({ order_id: id, status: 'out_for_delivery' });
     res.json({ success: true, message: 'Order out for delivery', data });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
@@ -496,6 +502,7 @@ router.patch('/:id/delivered', verifyToken, async (req, res) => {
       status:   'pending',
     });
 
+    wsEvents.orderDelivered({ order_id: id, status: 'delivered', completed_at });
     res.json({
       success: true,
       message: 'Order marked as delivered. Review request scheduled.',

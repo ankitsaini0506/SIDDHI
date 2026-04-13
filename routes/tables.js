@@ -211,6 +211,30 @@ router.post('/:id/generate-qr', verifyToken, async (req, res) => {
   }
 });
 
+// ── PATCH /api/tables/:id/toggle  (protected) ────────────────
+router.patch('/:id/toggle', verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { is_active } = req.body;
+    if (is_active === undefined)
+      return res.status(400).json({ success: false, message: 'is_active field is required' });
+
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from('tables')
+      .update({ is_active })
+      .eq('id', id)
+      .select('id, table_number, is_active')
+      .single();
+
+    if (error) return res.status(400).json({ success: false, message: 'Toggle failed', error: error.message });
+
+    res.json({ success: true, message: `Table ${is_active ? 'activated' : 'deactivated'}`, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
+  }
+});
+
 // ── PUT /api/tables/:id  (protected) ─────────────────────
 router.put('/:id', verifyToken, async (req, res) => {
   try {

@@ -335,6 +335,147 @@ router.patch('/customers/:phone/block', verifyToken, async (req, res) => {
   }
 });
 
+// ── PATCH /api/admin/customers/:phone/unblock  (protected) ───
+router.patch('/customers/:phone/unblock', verifyToken, async (req, res) => {
+  try {
+    const { phone }  = req.params;
+    const supabase   = getSupabase();
+
+    const { data: rest } = await supabase
+      .from('restaurants')
+      .select('id, operating_hours')
+      .limit(1)
+      .maybeSingle();
+
+    if (!rest) return res.status(404).json({ success: false, message: 'Restaurant not found' });
+
+    const current = rest.operating_hours || {};
+    const blocked  = (current.blocked_phones || []).filter(b => b.phone !== phone);
+
+    await supabase
+      .from('restaurants')
+      .update({ operating_hours: { ...current, blocked_phones: blocked } })
+      .eq('id', rest.id);
+
+    res.json({ success: true, message: 'Customer unblocked' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
+  }
+});
+
+// ── GET /api/admin/payments/summary  (protected) ──────────────
+router.get('/payments/summary', verifyToken, async (req, res) => {
+  try {
+    const { filter = 'today' } = req.query;
+    const supabase = getSupabase();
+
+    const now = new Date();
+    let dateFilter;
+    if (filter === 'today') {
+      const s = new Date(now); s.setHours(0, 0, 0, 0);
+      dateFilter = s.toISOString();
+    } else if (filter === 'weekly') {
+      dateFilter = new Date(now - 7  * 24 * 60 * 60 * 1000).toISOString();
+    } else if (filter === 'monthly') {
+      dateFilter = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
+    } else {
+      const s = new Date(now); s.setHours(0, 0, 0, 0);
+      dateFilter = s.toISOString();
+    }
+
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .select('payment_status, total_amount')
+      .gte('created_at', dateFilter);
+
+    if (error) return res.status(500).json({ success: false, message: 'DB error', error: error.message });
+
+    const paid     = (orders || []).filter(o => o.payment_status === 'paid');
+    const failed   = (orders || []).filter(o => o.payment_status === 'failed');
+    const refunded = (orders || []).filter(o => o.payment_status === 'refunded');
+    const pending  = (orders || []).filter(o => o.payment_status === 'pending');
+    const total_collected = paid.reduce((s, o) => s + (o.total_amount || 0), 0);
+
+    res.json({
+      success: true,
+      message: 'Payment summary fetched',
+      data: {
+        total_collected,
+        paid_orders:     paid.length,
+        failed_payments: failed.length,
+        refunded:        refunded.length,
+        pending_payments:pending.length,
+        total_orders:    (orders || []).length,
+        avg_order_value: paid.length > 0 ? Math.round(total_collected / paid.length) : 0,
+        filter,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
+  }
+});
+
+// ── POST /api/admin/payments/:orderId/refund  (protected) ─────
+router.post('/payments/:orderId/refund', verifyToken, async (req, res) => {
+  try {
+    const { orderId }  = req.params;
+    const { reason }   = req.body;
+    const supabase     = getSupabase();
+
+    const { data: order, error } = await supabase
+      .from('orders')
+      .select('id, order_number, payment_status, total_amount, razorpay_payment_id')
+      .eq('id', orderId)
+      .maybeSingle();
+
+    if (error || !order)
+      return res.status(404).json({ success: false, message: 'Order not found' });
+
+    if (order.payment_status !== 'paid')
+      return res.status(400).json({ success: false, message: `Order is not paid. Payment status: ${order.payment_status}` });
+
+    if (!order.razorpay_payment_id)
+      return res.status(400).json({ success: false, message: 'No Razorpay payment ID found for this order' });
+
+    const { initiateRefund } = require('../utils/razorpay');
+    const refund = await initiateRefund(
+      order.razorpay_payment_id,
+      order.total_amount,
+      reason || 'Manual refund by admin'
+    );
+
+    if (!refund)
+      return res.status(500).json({ success: false, message: 'Refund initiation failed. Check Razorpay credentials.' });
+
+    await supabase
+      .from('orders')
+      .update({ payment_status: 'refunded', updated_at: new Date().toISOString() })
+      .eq('id', orderId);
+
+    await supabase.from('notification_logs').insert({
+      order_id: orderId,
+      type:     'refund_initiated',
+      phone:    null,
+      message:  `Manual refund of ₹${order.total_amount} initiated. Refund ID: ${refund.id}`,
+      status:   'sent',
+    });
+
+    res.json({
+      success: true,
+      message: 'Refund initiated successfully',
+      data: {
+        order_id:       orderId,
+        order_number:   order.order_number,
+        refund_id:      refund.id,
+        amount_refunded: order.total_amount,
+        payment_status: 'refunded',
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
+  }
+});
+
 // ── GET /api/admin/payments  (protected) ──────────────────────
 router.get('/payments', verifyToken, async (req, res) => {
   try {

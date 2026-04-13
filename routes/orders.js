@@ -4,6 +4,8 @@ const { createClient } = require('@supabase/supabase-js');
 const { checkDeliveryRange } = require('../middleware/distance');
 const { validateCoupon }     = require('./coupons');
 
+const { events: wsEvents } = require('../utils/websocket');
+
 const router = express.Router();
 
 function getSupabase() {
@@ -189,20 +191,25 @@ router.post('/request', async (req, res) => {
     const { error: itemsErr } = await supabase.from('order_items').insert(orderItemsPayload);
     if (itemsErr) console.error('[orders/request] order_items insert error:', itemsErr.message);
 
+    const responseData = {
+      id:             order.id,
+      order_number:   order.order_number,
+      status:         'requested',
+      payment_status: 'pending',
+      subtotal,
+      discount_amount,
+      total_amount,
+      items_count:    resolvedItems.length,
+      note:           'Restaurant will confirm available items shortly (within 10 minutes)',
+    };
+
+    // Broadcast new order to admin dashboard in real-time
+    wsEvents.newOrder({ ...responseData, customer_name, customer_phone, order_type });
+
     res.status(201).json({
       success: true,
       message: 'Order request sent! Waiting for restaurant confirmation.',
-      data: {
-        id:             order.id,
-        order_number:   order.order_number,
-        status:         'requested',
-        payment_status: 'pending',
-        subtotal,
-        discount_amount,
-        total_amount,
-        items_count:    resolvedItems.length,
-        note:           'Restaurant will confirm available items shortly (within 10 minutes)',
-      },
+      data: responseData,
     });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Internal server error', error: err.message });

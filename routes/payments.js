@@ -7,6 +7,7 @@ const {
   createRazorpayOrder,
   verifyPaymentSignature,
 } = require('../utils/razorpay');
+const { events: wsEvents } = require('../utils/websocket');
 
 const router = express.Router();
 
@@ -184,6 +185,13 @@ router.post('/verify', async (req, res) => {
     }
 
     const items = await getApprovedItems(supabase, order_id);
+
+    wsEvents.paymentReceived({
+      order_id,
+      order_number:   order.order_number,
+      paid_amount:    order.total_amount,
+      payment_id:     razorpay_payment_id,
+    });
 
     res.json({
       success: true,

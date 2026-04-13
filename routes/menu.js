@@ -223,16 +223,26 @@ router.put('/:id', verifyToken, async (req, res) => {
 });
 
 // ── PATCH /api/menu/:id/toggle  (protected) ───────────────
+// Supports both: body with { is_available: boolean } OR no body (server-side flip)
 router.patch('/:id/toggle', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { is_available } = req.body;
+    const supabase = getSupabase();
+
+    // If frontend sends a value, use it; otherwise flip the current value
+    let is_available = req.body?.is_available;
 
     if (is_available === undefined) {
-      return res.status(400).json({ success: false, message: 'is_available field is required' });
+      const { data: current, error: fetchErr } = await supabase
+        .from('menu_items')
+        .select('is_available')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (fetchErr || !current) return res.status(404).json({ success: false, message: 'Item not found' });
+      is_available = !current.is_available;
     }
 
-    const supabase = getSupabase();
     const { data, error } = await supabase
       .from('menu_items')
       .update({ is_available, updated_at: new Date().toISOString() })

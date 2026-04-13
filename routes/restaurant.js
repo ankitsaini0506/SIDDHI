@@ -97,16 +97,15 @@ router.post('/logo', verifyToken, uploadLogo.single('logo'), async (req, res) =>
 });
 
 // ── PATCH /api/restaurant/toggle-status  (protected) ─────
+// Supports both: body with { is_open: boolean } OR no body (server-side flip)
 router.patch('/toggle-status', verifyToken, async (req, res) => {
   try {
-    const { is_open } = req.body;
-    if (is_open === undefined) {
-      return res.status(400).json({ success: false, message: 'is_open field is required' });
-    }
-
     const supabase = getSupabase();
     const { data: existing } = await getRestaurant(supabase);
     if (!existing) return res.status(404).json({ success: false, message: 'Restaurant not found' });
+
+    // If frontend sends a value, use it; otherwise flip the current value
+    const is_open = req.body?.is_open !== undefined ? req.body.is_open : !existing.is_open;
 
     const { data, error } = await supabase
       .from('restaurants')
