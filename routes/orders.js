@@ -153,8 +153,8 @@ router.post('/request', async (req, res) => {
     const total_amount = subtotal - discount_amount;
 
     // COD: confirmed immediately. Online: goes through admin approval flow.
-    const initialStatus        = isCod ? 'confirmed'    : 'requested';
-    const initialPaymentStatus = isCod ? 'cod_pending'  : 'pending';
+    const initialStatus        = isCod ? 'confirmed' : 'requested';
+    const initialPaymentStatus = 'pending'; // DB constraint only allows 'pending' at creation
 
     // COD: increment coupon used_count now (no payment step later)
     if (isCod && appliedCoupon) {
@@ -225,7 +225,7 @@ router.post('/request', async (req, res) => {
       total_amount,
       items_count:    resolvedItems.length,
       note:           isCod
-        ? 'COD order confirmed! Pay at delivery.'
+        ? 'COD order confirmed! Pay cash at delivery.'
         : 'Restaurant will confirm available items shortly (within 10 minutes)',
     };
 
