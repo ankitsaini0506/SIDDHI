@@ -85,6 +85,24 @@ router.post('/request', async (req, res) => {
 
     const supabase = getSupabase();
 
+    // 0. Resolve table_id: frontend sends UUID, DB orders.table_id is integer (table_number)
+    let resolvedTableId = null;
+    if (table_id) {
+      // Check if it looks like a UUID
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(table_id));
+      if (isUUID) {
+        const { data: tableRow } = await supabase
+          .from('tables')
+          .select('table_number')
+          .eq('id', table_id)
+          .maybeSingle();
+        resolvedTableId = tableRow ? tableRow.table_number : null;
+      } else {
+        // Already an integer (table_number) — use directly
+        resolvedTableId = parseInt(table_id) || null;
+      }
+    }
+
     // 1. Delivery distance check
     if (order_type === 'delivery') {
       if (!latitude || !longitude)
@@ -179,7 +197,7 @@ router.post('/request', async (req, res) => {
       .from('orders')
       .insert({
         order_type:           dbOrderType,
-        table_id:             table_id             || null,
+        table_id:             resolvedTableId,
         customer_name,
         customer_phone:       String(customer_phone),
         delivery_address:     delivery_address     || null,
@@ -208,7 +226,7 @@ router.post('/request', async (req, res) => {
           .from('orders')
           .insert({
             order_type:           dbOrderType,
-            table_id:             table_id             || null,
+            table_id:             resolvedTableId,
             customer_name,
             customer_phone:       String(customer_phone),
             delivery_address:     delivery_address     || null,
