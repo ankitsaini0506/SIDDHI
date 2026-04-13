@@ -130,7 +130,31 @@ router.get('/', verifyToken, async (req, res) => {
           .from('order_items')
           .select('*')
           .eq('order_id', order.id);
-        return { ...order, items: items || [] };
+
+        // Resolve table info if table_id present
+        let tableInfo = null;
+        if (order.table_id) {
+          const { data: tableRow } = await supabase
+            .from('tables')
+            .select('id, table_number, location, capacity')
+            .eq('table_number', order.table_id)
+            .maybeSingle();
+          if (tableRow) {
+            tableInfo = {
+              table_uuid:     tableRow.id,
+              table_number:   tableRow.table_number,
+              location:       tableRow.location,
+              capacity:       tableRow.capacity,
+            };
+          }
+        }
+
+        return {
+          ...order,
+          table_number: order.table_id,   // alias for clarity — same value as table_id integer
+          table_info:   tableInfo,         // full table details (null if no table)
+          items:        items || [],
+        };
       })
     );
 
