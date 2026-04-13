@@ -23,6 +23,7 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'https://siddhi-website.vercel.app',
+  'https://siddhi-website-rust.vercel.app',
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
