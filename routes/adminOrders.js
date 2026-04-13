@@ -13,7 +13,7 @@ function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
-// Helper — fetch full order with items
+// Helper — fetch full order with items + table info
 async function fetchOrderWithItems(supabase, id) {
   const { data: order, error } = await supabase
     .from('orders')
@@ -27,7 +27,38 @@ async function fetchOrderWithItems(supabase, id) {
     .select('*')
     .eq('order_id', id);
 
-  return { order: { ...order, items: items || [] }, error: null };
+  // Resolve table info
+  let tableInfo = null;
+  if (order.table_id) {
+    const { data: tableRow } = await supabase
+      .from('tables')
+      .select('id, table_number, location, capacity')
+      .eq('table_number', order.table_id)
+      .maybeSingle();
+    if (tableRow) {
+      tableInfo = {
+        table_uuid:   tableRow.id,
+        table_number: tableRow.table_number,
+        location:     tableRow.location,
+        capacity:     tableRow.capacity,
+      };
+    }
+  }
+
+  const displayOrderType = (order.order_type === 'pickup' && order.table_id)
+    ? 'dine_in'
+    : order.order_type;
+
+  return {
+    order: {
+      ...order,
+      order_type:   displayOrderType,
+      table_number: order.table_id,
+      table_info:   tableInfo,
+      items:        items || [],
+    },
+    error: null,
+  };
 }
 
 // Helper — recalculate coupon discount against a new subtotal
@@ -149,9 +180,16 @@ router.get('/', verifyToken, async (req, res) => {
           }
         }
 
+        // If table_id is set and order_type is 'pickup', it was a dine_in order
+        // (we store dine_in as pickup in DB due to constraint — restore the real label here)
+        const displayOrderType = (order.order_type === 'pickup' && order.table_id)
+          ? 'dine_in'
+          : order.order_type;
+
         return {
           ...order,
-          table_number: order.table_id,   // alias for clarity — same value as table_id integer
+          order_type:   displayOrderType,  // 'dine_in' restored for frontend
+          table_number: order.table_id,    // integer alias
           table_info:   tableInfo,         // full table details (null if no table)
           items:        items || [],
         };
