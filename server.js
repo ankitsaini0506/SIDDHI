@@ -24,6 +24,7 @@ const allowedOrigins = [
   'http://localhost:5174',
   'https://siddhi-website.vercel.app',
   'https://siddhi-website-rust.vercel.app',
+  'https://siddhi-admin-three.vercel.app',
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
