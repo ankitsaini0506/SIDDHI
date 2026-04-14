@@ -313,7 +313,8 @@ router.post('/request', async (req, res) => {
     };
 
     // Broadcast new order to admin dashboard in real-time
-    wsEvents.newOrder({ ...responseData, customer_name, customer_phone, order_type });
+    // Include table_number so admin sees table instantly without waiting for API refetch
+    wsEvents.newOrder({ ...responseData, customer_name, customer_phone, order_type, table_number: resolvedTableId ?? null });
 
     res.status(201).json({
       success: true,

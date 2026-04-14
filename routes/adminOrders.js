@@ -150,7 +150,10 @@ router.get('/', verifyToken, async (req, res) => {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (status) query = query.eq('status', status);
+    if (status) {
+      const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
+      query = statuses.length === 1 ? query.eq('status', statuses[0]) : query.in('status', statuses);
+    }
     if (type)   query = query.eq('order_type', type);
 
     if (filter === 'today') {
@@ -221,6 +224,7 @@ router.get('/', verifyToken, async (req, res) => {
       })
     );
 
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.json({ success: true, message: 'Orders fetched', data: ordersWithItems });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
